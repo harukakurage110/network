@@ -53,35 +53,29 @@ LINKS = [
 ]
 
 # 初期ルーティングテーブル（意図的に最短経路になっていない箇所を含む）
+# ※ ルータ間リンク自体（10.0.x.x/30）への経路は、宛先がルータ（のLAN）にならないため
+#    表示・学習対象から外し、宛先が各ルータのPCネットワークになるものだけを載せている。
 DEFAULT_TABLES = {
     "R1": [
         {"destination": "192.168.1.0/24", "next_hop": "direct", "interface": "eth0"},
-        {"destination": "10.0.12.0/30", "next_hop": "direct", "interface": "eth1"},
-        {"destination": "10.0.13.0/30", "next_hop": "direct", "interface": "eth2"},
         {"destination": "192.168.2.0/24", "next_hop": "10.0.12.2", "interface": "eth1"},
         {"destination": "192.168.3.0/24", "next_hop": "10.0.13.2", "interface": "eth2"},
         {"destination": "192.168.4.0/24", "next_hop": "10.0.13.2", "interface": "eth2"},
     ],
     "R2": [
         {"destination": "192.168.2.0/24", "next_hop": "direct", "interface": "eth0"},
-        {"destination": "10.0.12.0/30", "next_hop": "direct", "interface": "eth1"},
-        {"destination": "10.0.23.0/30", "next_hop": "direct", "interface": "eth2"},
         {"destination": "192.168.1.0/24", "next_hop": "10.0.12.1", "interface": "eth1"},
         {"destination": "192.168.3.0/24", "next_hop": "10.0.23.2", "interface": "eth2"},
         {"destination": "192.168.4.0/24", "next_hop": "10.0.23.2", "interface": "eth2"},
     ],
     "R3": [
         {"destination": "192.168.3.0/24", "next_hop": "direct", "interface": "eth0"},
-        {"destination": "10.0.23.0/30", "next_hop": "direct", "interface": "eth1"},
-        {"destination": "10.0.34.0/30", "next_hop": "direct", "interface": "eth2"},
-        {"destination": "10.0.13.0/30", "next_hop": "direct", "interface": "eth3"},
         {"destination": "192.168.1.0/24", "next_hop": "10.0.13.1", "interface": "eth3"},
         {"destination": "192.168.2.0/24", "next_hop": "10.0.23.1", "interface": "eth1"},
         {"destination": "192.168.4.0/24", "next_hop": "10.0.34.2", "interface": "eth2"},
     ],
     "R4": [
         {"destination": "192.168.4.0/24", "next_hop": "direct", "interface": "eth0"},
-        {"destination": "10.0.34.0/30", "next_hop": "direct", "interface": "eth1"},
         {"destination": "192.168.1.0/24", "next_hop": "10.0.34.1", "interface": "eth1"},
         {"destination": "192.168.2.0/24", "next_hop": "10.0.34.1", "interface": "eth1"},
         {"destination": "192.168.3.0/24", "next_hop": "10.0.34.1", "interface": "eth1"},
@@ -346,10 +340,11 @@ col_net, col_table = st.columns([3, 2], gap="large")
 
 with col_net:
     st.subheader("📡 ネットワーク図")
-    sim = st.session_state.sim
-    fig = draw_network(sim)
-    st.pyplot(fig, use_container_width=True)
-    plt.close(fig)
+    # 図は「①コントロール類の処理が全て終わった後の最終状態」で描画する。
+    # 先に描画してしまうと、ボタン押下による状態変化が図に反映されず、
+    # 下部の説明文（現在位置）と図のハイライト位置がずれてしまうため、
+    # プレースホルダーを使って描画位置だけ先に確保し、実際の描画は最後に行う。
+    network_placeholder = st.empty()
 
     st.subheader("🚀 パケット送信シミュレーション")
     c1, c2 = st.columns(2)
@@ -382,7 +377,13 @@ with col_net:
             st.session_state.auto_play = False
             st.rerun()
 
+    # ここまでで状態更新が全て終わっているので、最終状態のsimを取得して
+    # 図と説明文の両方をこの同じsimから描画する（ズレ防止）。
     sim = st.session_state.sim
+    fig = draw_network(sim)
+    network_placeholder.pyplot(fig, use_container_width=True)
+    plt.close(fig)
+
     if sim:
         if sim["finished"]:
             if sim["success"]:
