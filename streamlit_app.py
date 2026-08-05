@@ -321,6 +321,17 @@ def draw_network(sim):
                     markerfacecolor="#d32f2f", markeredgecolor="#7f0000", zorder=6)
             ax.text(rp[0], rp[1] - 1.2, "PKT", fontsize=5.5, color="white",
                     fontweight="bold", ha="center", va="center", zorder=7)
+    # --- パケット表示 ---
+        if sim:
+        if finished and success and dest_router:
+            # パケットがPCに到達した場合：LAN位置に表示
+            lp = LAN_POS[dest_router]
+            ax.text(lp[0], lp[1] + 1.0, "📦", fontsize=22, ha="center", va="center", zorder=10)
+        else:
+            # 通常：ルータ上に表示
+            if current_router:
+                rp = ROUTER_POS[current_router]
+                ax.text(rp[0], rp[1] - 1.15, "📦", fontsize=20, ha="center", va="center", zorder=10)
 
     ax.set_aspect("equal")
     fig.tight_layout()
