@@ -261,16 +261,17 @@ def draw_network(sim):
                         pass
 
     # --- ルータ間リンク ---
+    # (複数リンクがルータ1台に集中してもラベルが重ならないよう、リンクごとに
+    #  中央1箇所へまとめて「サブネットと両端のインタフェース名」だけを表示する。
+    #  ネクストホップのIPアドレス自体は表示しない）
     for ra, ifa, rb, ifb in LINKS:
         pa, pb = ROUTER_POS[ra], ROUTER_POS[rb]
         ax.plot([pa[0], pb[0]], [pa[1], pb[1]], color="#8a8a8a", linewidth=2, zorder=1)
-        la = offset_point(pa, pb, 0.16, perp=0.35)
-        lb = offset_point(pa, pb, 0.84, perp=0.35)
-        mid = offset_point(pa, pb, 0.5, perp=-0.35)
-        ax.text(*la, f"{ifa}\n{IFACES[ra][ifa]['ip']}", fontsize=6.5, ha="center", va="center", color="#333333")
-        ax.text(*lb, f"{ifb}\n{IFACES[rb][ifb]['ip']}", fontsize=6.5, ha="center", va="center", color="#333333")
-        ax.text(*mid, IFACES[ra][ifa]["subnet"], fontsize=6.5, ha="center", va="center",
-                style="italic", color="#555555")
+        mid = offset_point(pa, pb, 0.5, perp=0.45)
+        label = f"{IFACES[ra][ifa]['subnet']}\n{ra}:{ifa} - {rb}:{ifb}"
+        ax.text(*mid, label, fontsize=6.3, ha="center", va="center", color="#333333",
+                bbox=dict(boxstyle="round,pad=0.15", facecolor="white", edgecolor="#cccccc", alpha=0.85),
+                zorder=3)
 
     # --- ルータ〜LAN接続 ---
     for r in ROUTERS:
@@ -279,20 +280,31 @@ def draw_network(sim):
                 linestyle="--", zorder=1)
 
     # --- LAN ボックス ---
+    # 宛先IPアドレスが属するネットワークは、パケットが到達する前から常に強調表示する
     for r in ROUTERS:
         lp = LAN_POS[r]
         subnet = IFACES[r]["eth0"]["subnet"]
-        is_dest_lan = finished and success and dest_router == r
-        face = "#66bb6a" if is_dest_lan else "#e8f5e9"
+        is_target = dest_router == r
+        reached = finished and success and is_target
+
+        if reached:
+            face, edge, lw = "#66bb6a", "#1b5e20", 2.5
+        elif is_target:
+            face, edge, lw = "#fff59d", "#e65100", 2.5
+        else:
+            face, edge, lw = "#e8f5e9", "#2e7d32", 1.5
+
         rect = mpatches.FancyBboxPatch(
             (lp[0] - 1.05, lp[1] - 0.55), 2.1, 1.1,
             boxstyle="round,pad=0.05,rounding_size=0.15",
-            facecolor=face, edgecolor="#2e7d32", linewidth=1.5, zorder=2,
+            facecolor=face, edgecolor=edge, linewidth=lw, zorder=2,
         )
         ax.add_patch(rect)
-        label = f"💻 {subnet}"
-        if is_dest_lan:
-            label += "\n（宛先到達！）"
+        label = f"PC\n{subnet}"
+        if reached:
+            label += "\n[GOAL]"
+        elif is_target:
+            label += "\n[TARGET]"
         ax.text(lp[0], lp[1], label, fontsize=7, ha="center", va="center", fontweight="bold", zorder=3)
 
     # --- ルータ本体 ---
@@ -310,7 +322,11 @@ def draw_network(sim):
         ax.add_patch(circ)
         ax.text(rp[0], rp[1] + 0.05, r, fontsize=12, fontweight="bold", ha="center", va="center", zorder=5)
         if r == current_router:
-            ax.text(rp[0], rp[1] - 1.15, "📦", fontsize=20, ha="center", va="center", zorder=6)
+            # 絵文字フォントに依存しないよう、パケットはマーカー図形で表現する
+            ax.plot(rp[0], rp[1] - 1.2, marker="s", markersize=14,
+                    markerfacecolor="#d32f2f", markeredgecolor="#7f0000", zorder=6)
+            ax.text(rp[0], rp[1] - 1.2, "PKT", fontsize=5.5, color="white",
+                    fontweight="bold", ha="center", va="center", zorder=7)
 
     ax.set_aspect("equal")
     fig.tight_layout()
