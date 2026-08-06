@@ -316,10 +316,19 @@ def draw_network(sim):
         ax.add_patch(circ)
         ax.text(rp[0], rp[1] + 0.05, r, fontsize=12, fontweight="bold", ha="center", va="center", zorder=5)
         if r == current_router:
-            # 絵文字フォントに依存しないよう、パケットはマーカー図形で表現する
-            ax.plot(rp[0], rp[1] - 1.2, marker="s", markersize=14,
+            # 絵文字フォントに依存しないよう、パケットはマーカー図形で表現する。
+            # 宛先に到達した場合は、ルータで止めずPC（LANボックス）の手前まで進める。
+            if finished and success and dest_router == r:
+                lp = LAN_POS[r]
+                ddx, ddy = rp[0] - lp[0], rp[1] - lp[1]
+                dlen = (ddx ** 2 + ddy ** 2) ** 0.5 or 1
+                px = lp[0] + (ddx / dlen) * 1.55
+                py = lp[1] + (ddy / dlen) * 1.55
+            else:
+                px, py = rp[0], rp[1] - 1.2
+            ax.plot(px, py, marker="s", markersize=14,
                     markerfacecolor="#d32f2f", markeredgecolor="#7f0000", zorder=6)
-            ax.text(rp[0], rp[1] - 1.2, "PKT", fontsize=5.5, color="white",
+            ax.text(px, py, "PKT", fontsize=5.5, color="white",
                     fontweight="bold", ha="center", va="center", zorder=7)
 
     ax.set_aspect("equal")
@@ -336,24 +345,22 @@ st.caption(
     "という処理を繰り返します。ルーティングテーブルを書き換えると、通信の経路がどう変わるか観察してみましょう。"
 )
 
-col_net, col_table = st.columns([3, 2], gap="large")
+col_net, col_sim = st.columns([3, 2], gap="large")
 
 with col_net:
     st.subheader("📡 ネットワーク図")
     # 図は「①コントロール類の処理が全て終わった後の最終状態」で描画する。
     # 先に描画してしまうと、ボタン押下による状態変化が図に反映されず、
-    # 下部の説明文（現在位置）と図のハイライト位置がずれてしまうため、
+    # 右側の説明文（現在位置）と図のハイライト位置がずれてしまうため、
     # プレースホルダーを使って描画位置だけ先に確保し、実際の描画は最後に行う。
     network_placeholder = st.empty()
 
+with col_sim:
     st.subheader("🚀 パケット送信シミュレーション")
-    c1, c2 = st.columns(2)
-    with c1:
-        start_router = st.selectbox("送信元ルータ（PCが接続されている場所）", ROUTERS, key="start_router_select")
-    with c2:
-        dest_ip_input = st.text_input("宛先IPアドレス", value="192.168.4.10", key="dest_ip_input")
+    start_router = st.selectbox("送信元ルータ（PCが接続されている場所）", ROUTERS, key="start_router_select")
+    dest_ip_input = st.text_input("宛先IPアドレス", value="192.168.4.10", key="dest_ip_input")
 
-    b1, b2, b3, b4 = st.columns(4)
+    b1, b2 = st.columns(2)
     with b1:
         if st.button("📨 パケット生成", use_container_width=True):
             try:
@@ -363,26 +370,25 @@ with col_net:
             except ValueError:
                 st.error("宛先IPアドレスの形式が正しくありません。")
     with b2:
-        next_disabled = st.session_state.sim is None or st.session_state.sim["finished"]
-        if st.button("⏭️ 次へ（1ホップ進める）", use_container_width=True, disabled=next_disabled):
-            do_step()
-    with b3:
-        auto_disabled = st.session_state.sim is None or st.session_state.sim["finished"]
-        st.session_state.auto_play = st.toggle(
-            "▶️ 自動実行", value=st.session_state.auto_play, disabled=auto_disabled
-        )
-    with b4:
         if st.button("🔄 リセット", use_container_width=True):
             st.session_state.sim = None
             st.session_state.auto_play = False
             st.rerun()
 
+    b3, b4 = st.columns(2)
+    with b3:
+        next_disabled = st.session_state.sim is None or st.session_state.sim["finished"]
+        if st.button("⏭️ 次へ（1ホップ進める）", use_container_width=True, disabled=next_disabled):
+            do_step()
+    with b4:
+        auto_disabled = st.session_state.sim is None or st.session_state.sim["finished"]
+        st.session_state.auto_play = st.toggle(
+            "▶️ 自動実行", value=st.session_state.auto_play, disabled=auto_disabled
+        )
+
     # ここまでで状態更新が全て終わっているので、最終状態のsimを取得して
     # 図と説明文の両方をこの同じsimから描画する（ズレ防止）。
     sim = st.session_state.sim
-    fig = draw_network(sim)
-    network_placeholder.pyplot(fig, use_container_width=True)
-    plt.close(fig)
 
     if sim:
         if sim["finished"]:
@@ -402,61 +408,63 @@ with col_net:
     else:
         st.caption("「パケット生成」を押してシミュレーションを開始してください。")
 
-with col_table:
-    st.subheader("🛠️ ルーティングテーブル編集")
-    edit_router = st.selectbox("編集するルータ", ROUTERS, key="edit_router_select")
+# 図はコントロール類（ボタン処理）が全て終わった後に、最終状態のsimで描画する
+fig = draw_network(st.session_state.sim)
+network_placeholder.pyplot(fig, use_container_width=True)
+plt.close(fig)
 
-    with st.expander("🔧 インタフェース一覧（参考）", expanded=False):
-        for r in ROUTERS:
-            rows = []
-            for name, info in IFACES[r].items():
-                peer = f" ↔ {info['peer']}" if info["peer"] else "（LAN）"
-                rows.append(f"- `{name}`: {info['ip']}（{info['subnet']}）{peer}")
-            st.markdown(f"**{r}**\n" + "\n".join(rows))
+st.divider()
+st.subheader("🛠️ ルーティングテーブル編集")
+edit_router = st.selectbox("編集するルータ", ROUTERS, key="edit_router_select")
 
-    df = pd.DataFrame(st.session_state.tables[edit_router])
-    edited_df = st.data_editor(
-        df,
-        num_rows="dynamic",
-        use_container_width=True,
-        key=f"editor_{edit_router}",
-        column_config={
-            "destination": st.column_config.TextColumn("宛先ネットワーク (CIDR)", help="例: 192.168.4.0/24"),
-            "next_hop": st.column_config.TextColumn("ネクストホップ", help="'direct' または IPアドレス"),
-            "interface": st.column_config.TextColumn("インタフェース", help="例: eth0"),
-        },
-    )
+with st.expander("🔧 インタフェース一覧（参考）", expanded=False):
+    for r in ROUTERS:
+        rows = []
+        for name, info in IFACES[r].items():
+            peer = f" ↔ {info['peer']}" if info["peer"] else "（LAN）"
+            rows.append(f"- `{name}`: {info['ip']}（{info['subnet']}）{peer}")
+        st.markdown(f"**{r}**\n" + "\n".join(rows))
 
-    ac1, ac2 = st.columns(2)
-    with ac1:
-        if st.button("✅ この設定を適用", use_container_width=True):
-            cleaned = edited_df.fillna("").to_dict("records")
-            errors = []
-            for row in cleaned:
-                dest = str(row.get("destination", "")).strip()
-                if dest == "":
-                    continue
-                try:
-                    ipaddress.ip_network(dest, strict=False)
-                except ValueError:
-                    errors.append(dest)
-            if errors:
-                st.error(f"次の宛先ネットワークの形式が正しくありません: {', '.join(errors)}")
-            else:
-                st.session_state.tables[edit_router] = [
-                    row for row in cleaned if str(row.get("destination", "")).strip() != ""
-                ]
-                st.success(f"{edit_router} のルーティングテーブルを更新しました。")
-    with ac2:
-        if st.button("↩️ このルータを初期状態に戻す", use_container_width=True):
-            st.session_state.tables[edit_router] = copy.deepcopy(DEFAULT_TABLES[edit_router])
-            editor_key = f"editor_{edit_router}"
-            if editor_key in st.session_state:
-                del st.session_state[editor_key]
-            st.rerun()
+df = pd.DataFrame(st.session_state.tables[edit_router])
+edited_df = st.data_editor(
+    df,
+    num_rows="dynamic",
+    use_container_width=True,
+    key=f"editor_{edit_router}",
+    column_config={
+        "destination": st.column_config.TextColumn("宛先ネットワーク (CIDR)", help="例: 192.168.4.0/24"),
+        "next_hop": st.column_config.TextColumn("ネクストホップ", help="'direct' または IPアドレス"),
+        "interface": st.column_config.TextColumn("インタフェース", help="例: eth0"),
+    },
+)
 
-    st.markdown("#### 現在このルータで使われているテーブル")
-    st.dataframe(pd.DataFrame(st.session_state.tables[edit_router]), use_container_width=True, hide_index=True)
+ac1, ac2 = st.columns(2)
+with ac1:
+    if st.button("✅ この設定を適用", use_container_width=True):
+        cleaned = edited_df.fillna("").to_dict("records")
+        errors = []
+        for row in cleaned:
+            dest = str(row.get("destination", "")).strip()
+            if dest == "":
+                continue
+            try:
+                ipaddress.ip_network(dest, strict=False)
+            except ValueError:
+                errors.append(dest)
+        if errors:
+            st.error(f"次の宛先ネットワークの形式が正しくありません: {', '.join(errors)}")
+        else:
+            st.session_state.tables[edit_router] = [
+                row for row in cleaned if str(row.get("destination", "")).strip() != ""
+            ]
+            st.success(f"{edit_router} のルーティングテーブルを更新しました。")
+with ac2:
+    if st.button("↩️ このルータを初期状態に戻す", use_container_width=True):
+        st.session_state.tables[edit_router] = copy.deepcopy(DEFAULT_TABLES[edit_router])
+        editor_key = f"editor_{edit_router}"
+        if editor_key in st.session_state:
+            del st.session_state[editor_key]
+        st.rerun()
 
 # --- 自動実行 ---
 if st.session_state.auto_play and st.session_state.sim and not st.session_state.sim["finished"]:
